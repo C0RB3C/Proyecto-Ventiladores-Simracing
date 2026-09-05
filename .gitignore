@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# PlatformIO
+esp32-firmware/.pio/
+esp32-firmware/.vscode/
+
+# Secretos de WiFi del ESP32 (usa config.h.example como plantilla)
+esp32-firmware/include/config.h

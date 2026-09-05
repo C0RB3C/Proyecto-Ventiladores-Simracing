@@ -1,0 +1,33 @@
+// Copia este archivo a "config.h" (sin .example) y rellena tus datos.
+// config.h NO se sube al repositorio (ver .gitignore) porque contiene tu
+// contraseña de WiFi.
+#pragma once
+
+// --- WiFi ---
+#define WIFI_SSID "TU_SSID"
+#define WIFI_PASSWORD "TU_PASSWORD"
+
+// --- UDP ---
+// Puerto en el que el ESP32 escucha los paquetes de duty cycle del PC.
+// Debe coincidir con "esp32_port" en pc-app/config.ini
+#define UDP_LISTEN_PORT 4210
+
+// --- PWM del ventilador ---
+// GPIO conectado al cable de control PWM (normalmente azul) del ventilador.
+// Usa un GPIO que soporte salida PWM normal (evita GPIO34-39, que son solo entrada).
+#define FAN_PWM_PIN 25
+
+// Frecuencia estandar de PWM para ventiladores de PC de 4 pines.
+#define FAN_PWM_FREQ_HZ 25000
+
+// Resolucion del PWM en bits (8 bits = 0-255).
+#define FAN_PWM_RESOLUTION_BITS 8
+
+// Canal LEDC interno del ESP32 (0-15), no suele hacer falta tocarlo.
+#define FAN_PWM_CHANNEL 0
+
+// --- Seguridad (fail-safe) ---
+// Si no llega ningun paquete UDP valido en este tiempo, el ventilador se
+// lleva a duty 0 automaticamente (por si se cierra iRacing, se apaga el PC,
+// se cae el WiFi, etc).
+#define FAILSAFE_TIMEOUT_MS 3000
