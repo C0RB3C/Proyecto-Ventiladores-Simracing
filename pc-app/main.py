@@ -1,6 +1,7 @@
 """
-Lee la velocidad del coche desde iRacing (memoria compartida via pyirsdk) y
-envia el duty cycle correspondiente del ventilador a un ESP32 por UDP.
+Lee la velocidad del coche desde el simulador activo (iRacing y/o Assetto
+Corsa EVO, segun configuracion) y envia el duty cycle correspondiente del
+ventilador a un ESP32 por UDP.
 
 Uso:
     python main.py [--config config.ini]
@@ -10,7 +11,13 @@ import configparser
 import socket
 import time
 
-import irsdk
+from telemetry.ac_evo_reader import AssettoCorsaEvoReader
+from telemetry.iracing_reader import IRacingReader
+
+READER_CLASSES = {
+    "iracing": IRacingReader,
+    "ac_evo": AssettoCorsaEvoReader,
+}
 
 
 class Config:
@@ -18,6 +25,9 @@ class Config:
         parser = configparser.ConfigParser()
         if not parser.read(path):
             raise FileNotFoundError(f"No se pudo leer el archivo de configuracion: {path}")
+
+        general = parser["general"]
+        self.sim_priority = [s.strip() for s in general.get("priority").split(",") if s.strip()]
 
         net = parser["network"]
         self.esp32_ip = net.get("esp32_ip")
@@ -53,35 +63,32 @@ def speed_to_duty(speed_kmh: float, on_track: bool, cfg: Config) -> int:
     return int(round(max(0, min(100, duty))))
 
 
-class IRacingReader:
-    """Envuelve irsdk con reconexion automatica cuando iRacing arranca/cierra."""
+def build_readers(cfg: Config):
+    readers = []
+    for sim_key in cfg.sim_priority:
+        reader_cls = READER_CLASSES.get(sim_key)
+        if reader_cls is None:
+            print(f"Aviso: simulador desconocido en config.ini: '{sim_key}' (ignorado)")
+            continue
+        readers.append(reader_cls())
+    if not readers:
+        raise ValueError("No hay ningun simulador valido en 'priority' de config.ini")
+    return readers
 
-    def __init__(self):
-        self.ir = irsdk.IRSDK()
-        self.connected = False
 
-    def update(self):
-        if self.connected and not (self.ir.is_initialized and self.ir.is_connected):
-            self.connected = False
-            self.ir.shutdown()
-            print("iRacing desconectado")
-        elif not self.connected:
-            if self.ir.startup() and self.ir.is_initialized and self.ir.is_connected:
-                self.connected = True
-                print("iRacing conectado")
+def read_active_sim(readers):
+    """Actualiza todos los lectores y devuelve (speed_kmh, on_track, nombre_sim)
+    del primero (por prioridad) que tenga datos frescos, o (None, None, None)."""
+    for reader in readers:
+        reader.update()
 
-    def read(self):
-        """Devuelve (speed_kmh, on_track) o None si no hay datos validos."""
-        if not self.connected:
-            return None
-        try:
-            speed_ms = self.ir["Speed"]
-            on_track = bool(self.ir["IsOnTrack"])
-        except Exception:
-            return None
-        if speed_ms is None:
-            return None
-        return speed_ms * 3.6, on_track
+    for reader in readers:
+        result = reader.read()
+        if result is not None:
+            speed_kmh, on_track = result
+            return speed_kmh, on_track, reader.name
+
+    return None, None, None
 
 
 def main():
@@ -91,24 +98,29 @@ def main():
 
     cfg = Config(args.config)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    reader = IRacingReader()
+    readers = build_readers(cfg)
 
     period = 1.0 / cfg.send_rate_hz
     last_duty_sent = -1
+    last_active_sim = None
 
+    sim_names = ", ".join(r.name for r in readers)
+    print(f"Simuladores habilitados (por prioridad): {sim_names}")
     print(f"Enviando duty cycle a {cfg.esp32_ip}:{cfg.esp32_port} cada {period*1000:.0f} ms")
 
     try:
         while True:
             loop_start = time.time()
-            reader.update()
 
-            data = reader.read()
-            if data is None:
+            speed_kmh, on_track, active_sim = read_active_sim(readers)
+            if active_sim is None:
                 duty = 0
             else:
-                speed_kmh, on_track = data
                 duty = speed_to_duty(speed_kmh, on_track, cfg)
+
+            if active_sim != last_active_sim:
+                print(f"Simulador activo: {active_sim or 'ninguno'}")
+                last_active_sim = active_sim
 
             message = f"P{duty:03d}\n".encode("ascii")
             sock.sendto(message, (cfg.esp32_ip, cfg.esp32_port))

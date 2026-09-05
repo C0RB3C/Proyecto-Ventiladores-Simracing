@@ -1,24 +1,27 @@
 # Proyecto Ventiladores Simracing
 
-Sistema que lee la velocidad del coche en **iRacing** y controla en tiempo real
-la velocidad de un **ventilador PC de 4 pines (PWM)** mediante un **ESP32**,
-para simular el flujo de aire según la velocidad.
+Sistema que lee la velocidad del coche en **iRacing** y/o **Assetto Corsa
+EVO** y controla en tiempo real la velocidad de un **ventilador PC de 4
+pines (PWM)** mediante un **ESP32**, para simular el flujo de aire según la
+velocidad.
 
 ## Arquitectura
 
 ```
- iRacing (Windows)                ESP32                    Ventilador
+ iRacing / AC EVO (Windows)       ESP32                    Ventilador
  ┌────────────────┐   WiFi/UDP   ┌──────────────┐   PWM    ┌──────────┐
  │ pc-app/main.py │ ───────────► │ firmware.ino │ ───────► │ 4-pin fan│
- │ (irsdk shared  │   "P075\n"   │ WiFiUDP +    │  25 kHz  │          │
- │  memory)       │              │ LEDC PWM     │          │          │
+ │ (memoria       │   "P075\n"   │ WiFiUDP +    │  25 kHz  │          │
+ │  compartida)   │              │ LEDC PWM     │          │          │
  └────────────────┘              └──────────────┘          └──────────┘
 ```
 
-1. **`pc-app/`** (Python): se conecta a la memoria compartida de iRacing con
-   `pyirsdk`, lee `Speed` y `IsOnTrack`, calcula un porcentaje de duty cycle
-   (0-100%) según una curva configurable, y lo envía por UDP al ESP32 varias
-   veces por segundo.
+1. **`pc-app/`** (Python): comprueba, por orden de prioridad configurable,
+   qué simulador está activo (iRacing vía `pyirsdk`, Assetto Corsa EVO vía
+   su memoria compartida), lee la velocidad, calcula un porcentaje de duty
+   cycle (0-100%) según una curva configurable, y lo envía por UDP al ESP32
+   varias veces por segundo. Ver `pc-app/README.md` para el detalle de cada
+   lector y sus limitaciones.
 2. **`esp32-firmware/`** (PlatformIO/Arduino): se conecta a tu WiFi, escucha
    paquetes UDP con el duty cycle, y genera la señal PWM de 25 kHz que
    entienden los ventiladores de PC de 4 pines. Si deja de recibir paquetes
@@ -54,7 +57,7 @@ Más detalles en `pc-app/README.md` y `esp32-firmware/README.md`.
 
 ## Próximos pasos posibles (no implementados aún)
 
-- Soporte para otros simuladores (Assetto Corsa, AMS2, SimHub genérico).
+- Soporte para otros simuladores (Assetto Corsa clásico, ACC, AMS2, SimHub genérico).
 - Lectura del tacómetro del ventilador (RPM real) para control en bucle cerrado.
 - Varias curvas de velocidad seleccionables (ciudad/circuito, lineal/exponencial).
 - Descubrimiento automático del ESP32 en la red (mDNS) en vez de IP fija.
