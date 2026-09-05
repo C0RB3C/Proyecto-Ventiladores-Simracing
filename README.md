@@ -35,8 +35,17 @@ velocidad.
 - Cables para conectar:
   - `GND` del ventilador y `GND` de la fuente de 12V → **GND común** con el ESP32.
   - Cable **PWM (azul)** del ventilador → un GPIO del ESP32 (ver `esp32-firmware/include/config.h.example`).
-  - `+12V` del ventilador → fuente de 12V (NO al ESP32).
-- El ESP32 se alimenta por su propio USB (5V).
+  - `+12V` del ventilador → fuente de 12V (NO al ESP32, salvo que uses el conversor de abajo).
+- El ESP32 se alimenta por su propio USB (5V) **en el prototipo en protoboard**.
+- **Opcional, para el montaje final:** conversor step-down 12V→5V (módulo
+  tipo LM2596/MP1584EN) para alimentar el ESP32 desde la misma fuente de 12V
+  del ventilador, sin depender de un puerto USB del PC. Se conecta:
+  - Entrada del conversor → `+12V` / `GND` de la fuente de 12V.
+  - Salida del conversor (ajustada a 5V) → pin `5V`/`VIN` y `GND` del ESP32
+    (ese pin alimenta el regulador interno de la placa igual que el USB).
+  - No hace falta en la fase de protoboard (el USB del PC ya alimenta el
+    ESP32 mientras pruebas), pero merece la pena tenerlo comprado para no
+    tener que parar cuando pasemos al montaje definitivo.
 
 > El ESP32 solo pone la señal de control (3.3V lógicos) en el cable PWM del
 > ventilador; no necesita mover corriente de potencia, así que no hace falta
