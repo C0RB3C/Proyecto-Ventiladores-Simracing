@@ -64,9 +64,24 @@ Arranca primero el simulador (iRacing o Assetto Corsa EVO) y después:
 python main.py
 ```
 
-Verás por consola qué simulador se detecta como activo y cada vez que
-cambia el duty enviado. Ctrl+C para parar (envía un último paquete de
-duty=0 al ventilador antes de salir).
+Por defecto se abre una ventanita (siempre visible encima de otras
+ventanas) con el duty cycle en grande, la velocidad y qué simulador está
+activo — pensada para verificar de un vistazo, durante el montaje, que el
+PWM que se envía es el esperado. Útil sobre todo mientras pruebas el
+hardware: puedes mover el coche en el simulador y ver en tiempo real qué
+porcentaje se está mandando al ESP32.
+
+Para desactivar la ventana y quedarte solo con la consola (por ejemplo si
+lo dejas corriendo en segundo plano):
+
+```powershell
+python main.py --headless
+```
+
+En ambos modos verás por consola qué simulador se detecta como activo y
+cada vez que cambia el duty enviado. Para salir: cierra la ventana (modo
+normal) o Ctrl+C (modo headless); en ambos casos se envía un último
+paquete de duty=0 al ventilador antes de salir.
 
 > **Importante para Assetto Corsa EVO:** arranca siempre el juego *antes*
 > de lanzar `main.py`. El lector abre la memoria compartida por nombre y,

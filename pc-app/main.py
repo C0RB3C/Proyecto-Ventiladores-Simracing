@@ -3,8 +3,12 @@ Lee la velocidad del coche desde el simulador activo (iRacing y/o Assetto
 Corsa EVO, segun configuracion) y envia el duty cycle correspondiente del
 ventilador a un ESP32 por UDP.
 
+Por defecto abre una ventanita con el duty cycle, la velocidad y el
+simulador activo en tiempo real. Usa --headless para desactivarla y
+quedarte solo con la consola.
+
 Uso:
-    python main.py [--config config.ini]
+    python main.py [--config config.ini] [--headless]
 """
 import argparse
 import configparser
@@ -13,6 +17,7 @@ import time
 
 from telemetry.ac_evo_reader import AssettoCorsaEvoReader
 from telemetry.iracing_reader import IRacingReader
+from ui import FanMonitorUI
 
 READER_CLASSES = {
     "iracing": IRacingReader,
@@ -91,46 +96,72 @@ def read_active_sim(readers):
     return None, None, None
 
 
+def compute_and_send(cfg, readers, sock, state):
+    """Un ciclo de trabajo: lee telemetria, calcula duty, lo envia por UDP.
+    Devuelve (duty, speed_kmh, active_sim) para que quien llame actualice UI/logs."""
+    speed_kmh, on_track, active_sim = read_active_sim(readers)
+    duty = 0 if active_sim is None else speed_to_duty(speed_kmh, on_track, cfg)
+
+    sock.sendto(f"P{duty:03d}\n".encode("ascii"), (cfg.esp32_ip, cfg.esp32_port))
+
+    if duty != state["last_duty_sent"]:
+        print(f"duty={duty:3d}%")
+        state["last_duty_sent"] = duty
+    if active_sim != state["last_active_sim"]:
+        print(f"Simulador activo: {active_sim or 'ninguno'}")
+        state["last_active_sim"] = active_sim
+
+    return duty, speed_kmh, active_sim
+
+
+def run_headless(cfg, readers, sock, period):
+    state = {"last_duty_sent": -1, "last_active_sim": None}
+    while True:
+        loop_start = time.time()
+        compute_and_send(cfg, readers, sock, state)
+        elapsed = time.time() - loop_start
+        time.sleep(max(0.0, period - elapsed))
+
+
+def run_with_gui(cfg, readers, sock, period):
+    state = {"last_duty_sent": -1, "last_active_sim": None}
+    ui = FanMonitorUI(cfg.esp32_ip, cfg.esp32_port)
+    period_ms = max(1, int(period * 1000))
+
+    def tick():
+        duty, speed_kmh, active_sim = compute_and_send(cfg, readers, sock, state)
+        ui.update(duty, speed_kmh, active_sim)
+        ui.schedule(period_ms, tick)
+
+    def on_close():
+        sock.sendto(b"P000\n", (cfg.esp32_ip, cfg.esp32_port))
+        ui.destroy()
+
+    ui.on_close(on_close)
+    ui.schedule(0, tick)
+    ui.run()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config.ini", help="Ruta al archivo config.ini")
+    parser.add_argument("--headless", action="store_true", help="No abrir la ventana, solo consola")
     args = parser.parse_args()
 
     cfg = Config(args.config)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     readers = build_readers(cfg)
-
     period = 1.0 / cfg.send_rate_hz
-    last_duty_sent = -1
-    last_active_sim = None
 
     sim_names = ", ".join(r.name for r in readers)
     print(f"Simuladores habilitados (por prioridad): {sim_names}")
     print(f"Enviando duty cycle a {cfg.esp32_ip}:{cfg.esp32_port} cada {period*1000:.0f} ms")
 
     try:
-        while True:
-            loop_start = time.time()
-
-            speed_kmh, on_track, active_sim = read_active_sim(readers)
-            if active_sim is None:
-                duty = 0
-            else:
-                duty = speed_to_duty(speed_kmh, on_track, cfg)
-
-            if active_sim != last_active_sim:
-                print(f"Simulador activo: {active_sim or 'ninguno'}")
-                last_active_sim = active_sim
-
-            message = f"P{duty:03d}\n".encode("ascii")
-            sock.sendto(message, (cfg.esp32_ip, cfg.esp32_port))
-
-            if duty != last_duty_sent:
-                print(f"duty={duty:3d}%")
-                last_duty_sent = duty
-
-            elapsed = time.time() - loop_start
-            time.sleep(max(0.0, period - elapsed))
+        if args.headless:
+            run_headless(cfg, readers, sock, period)
+        else:
+            run_with_gui(cfg, readers, sock, period)
     except KeyboardInterrupt:
         print("Parando, enviando duty=0 al ventilador...")
         sock.sendto(b"P000\n", (cfg.esp32_ip, cfg.esp32_port))
